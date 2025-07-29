@@ -161,6 +161,13 @@ def get_webdriver(proxy: dict = None) -> WebDriver:
         logging.debug("Using webdriver proxy: %s", proxy_url)
         options.add_argument('--proxy-server=%s' % proxy_url)
 
+
+    # prefs 参数是谷歌浏览器默认的参数是Josn文件，所以以字典形式传入
+    prefs = {'download.prompt_for_download': False, 'download.default_directory': '/app/downloads','download.directory_upgrade': True, 'safebrowsing.enabled': False}
+     
+    # 将自己修改的参数prefs传入ChromeOptions
+    options.add_experimental_option("prefs", prefs)
+
     # note: headless mode is detected (headless = True)
     # we launch the browser in head-full mode with the window hidden
     windows_headless = False
