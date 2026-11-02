@@ -32,6 +32,10 @@ def get_config_disable_media() -> bool:
     return os.environ.get('DISABLE_MEDIA', 'false').lower() == 'true'
 
 
+def get_config_browser_wait_timeout() -> int:
+    return int(os.environ.get('BROWSER_WAIT_TIMEOUT', 1))
+
+
 def get_flaresolverr_version() -> str:
     global FLARESOLVERR_VERSION
     if FLARESOLVERR_VERSION is not None:
@@ -81,14 +85,18 @@ def create_proxy_extension(proxy: dict) -> str:
     }
     """
 
+    # Values below originate from the untrusted `proxy` object of the /v1 API
+    # request. They must be encoded as JSON string/number literals, never
+    # interpolated as raw text, so none of them can break out of their
+    # intended position in the generated JavaScript.
     background_js = """
     var config = {
         mode: "fixed_servers",
         rules: {
             singleProxy: {
-                scheme: "%s",
-                host: "%s",
-                port: %d
+                scheme: %s,
+                host: %s,
+                port: %s
             },
             bypassList: ["localhost"]
         }
@@ -99,8 +107,8 @@ def create_proxy_extension(proxy: dict) -> str:
     function callbackFn(details) {
         return {
             authCredentials: {
-                username: "%s",
-                password: "%s"
+                username: %s,
+                password: %s
             }
         };
     }
@@ -111,11 +119,11 @@ def create_proxy_extension(proxy: dict) -> str:
         ['blocking']
     );
     """ % (
-        scheme,
-        host,
-        port,
-        username,
-        password
+        json.dumps(scheme),
+        json.dumps(host),
+        json.dumps(port),
+        json.dumps(username),
+        json.dumps(password)
     )
 
     proxy_extension_dir = tempfile.mkdtemp()
@@ -149,8 +157,34 @@ def get_webdriver(proxy: dict = None) -> WebDriver:
         options.add_argument('--disable-gpu-sandbox')
     options.add_argument('--ignore-certificate-errors')
     options.add_argument('--ignore-ssl-errors')
-    # disable breaking popup
-    options.add_argument("--disable-features=LocalNetworkAccessChecks")
+
+    # Chrome parses --disable-features as a single value: passing the switch a
+    # second time keeps the last value and silently discards the earlier one
+    # whole, along with every feature it named. Collect the names here and emit
+    # one switch once, below, after every branch that may add to them.
+    disabled_features = [
+        'LocalNetworkAccessChecks',  # disable breaking popup
+        # disable AI model download
+        'OptimizationGuideOnDeviceModel',
+        'GlicActor',
+        'GlicActorUi',
+        'PromptAPIForGeminiNano',
+        'PromptAPIX',
+        'PromptAPINoTranslation',
+        'SummarizationAPIForGeminiNano',
+        'WriterAPIForGeminiNano',
+        'TranslationAPI',
+        'LanguageDetectionAPI',
+        'AIPromptAPI',
+        'AIRewriteAPI',
+        'AIWritingAssistant',
+        'AIGenerativeSuggestions',
+        'AIGeneratedFlags',
+        'AICompositionFeature',
+        'HistoryAI',
+        'TabOrganizer',
+        'SmartSuggestion',
+    ]
 
     language = os.environ.get('LANG', None)
     if language is not None:
@@ -163,19 +197,20 @@ def get_webdriver(proxy: dict = None) -> WebDriver:
     proxy_extension_dir = None
     if proxy and all(key in proxy for key in ['url', 'username', 'password']):
         proxy_extension_dir = create_proxy_extension(proxy)
-        options.add_argument("--disable-features=DisableLoadExtensionCommandLineSwitch")
+        disabled_features.append('DisableLoadExtensionCommandLineSwitch')
         options.add_argument("--load-extension=%s" % os.path.abspath(proxy_extension_dir))
     elif proxy and 'url' in proxy:
         proxy_url = proxy['url']
         logging.debug("Using webdriver proxy: %s", proxy_url)
         options.add_argument('--proxy-server=%s' % proxy_url)
 
-
     # prefs 参数是谷歌浏览器默认的参数是Josn文件，所以以字典形式传入
     prefs = {'download.prompt_for_download': False, 'download.default_directory': '/app/downloads','download.directory_upgrade': True, 'safebrowsing.enabled': False}
      
     # 将自己修改的参数prefs传入ChromeOptions
     options.add_experimental_option("prefs", prefs)
+
+    options.add_argument('--disable-features=%s' % ','.join(disabled_features))
 
     # note: headless mode is detected (headless = True)
     # we launch the browser in head-full mode with the window hidden

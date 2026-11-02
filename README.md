@@ -35,7 +35,7 @@ already included within the image.
 
 Docker images are available in:
 
-- GitHub Registry => https://github.com/orgs/FlareSolverr/packages/container/package/flaresolverr
+- GitHub Registry => https://github.com/FlareSolverr/FlareSolverr/pkgs/container/flaresolverr
 - DockerHub => https://hub.docker.com/r/flaresolverr/flaresolverr
 
 Supported architectures are:
@@ -75,6 +75,31 @@ and update the package with `sudo apt install libseccomp2=2.5.1-1~bpo10+1` or `s
 Remember to restart the Docker daemon and the container after the update.
 
 DO NOT expose FlareSolverr to the internet, as it can be abused.
+
+**Storage & NVMe/SSD Performance Optimization**
+
+By default, on every challenge request, headless browser creates and destroys temporary profile and other relevant data 
+inside `/tmp`. When running inside Docker without a RAM-backed mount, Docker's driver writes these transient files 
+directly to the host storage layer (volume), which can generate significant NVMe/SSD read/write wear over time.
+
+To route all temporary browser profile operations directly to RAM and reduce host disk writes, mount `/tmp` under `tmpfs` in the container.
+
+Add the following `tmpfs` block to your `flaresolverr` service:
+
+```yaml
+services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    # ... other settings ...
+    tmpfs:
+      - /tmp:size=256M,mode=1777
+```
+
+If you are using Docker CLI (Docker run) pass `--tmpfs /tmp:size=256M,mode=1777` flag.
+
+**Note on sizing:** size=256M setting acts as a maximum RAM allocation ceiling. Feel free to increase/decrease depending 
+on your FlareSolverr usage. Approx usage is between 10MB - 30MB per request, cleared once the request finishes.
 
 ### Precompiled binaries
 
@@ -279,24 +304,25 @@ This works like `request.get`, with the addition of the postData parameter. Note
 
 ## Environment variables
 
-| Name               | Default                | Notes                                                                                                                                    |
-| ------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| LOG_LEVEL          | info                   | Verbosity of the logging. Use `LOG_LEVEL=debug` for more information.                                                                    |
-| LOG_FILE           | none                   | Path to capture log to file. Example: `/config/flaresolverr.log`.                                                                         |
-| LOG_HTML           | false                  | Only for debugging. If `true` all HTML that passes through the proxy will be logged to the console in `debug` level.                     |
-| PROXY_URL          | none                   | URL for proxy. Will be overwritten by `request` or `sessions` proxy, if used. Example: `http://127.0.0.1:8080`.                          |
-| PROXY_USERNAME     | none                   | Username for proxy. Will be overwritten by `request` or `sessions` proxy, if used. Example: `testuser`.                                  |
-| PROXY_PASSWORD     | none                   | Password for proxy. Will be overwritten by `request` or `sessions` proxy, if used. Example: `testpass`.                                  |
-| CAPTCHA_SOLVER     | none                   | Captcha solving method. It is used when a captcha is encountered. See the Captcha Solvers section.                                       |
-| TZ                 | UTC                    | Timezone used in the logs and the web browser. Example: `TZ=Europe/London`.                                                              |
-| LANG               | none                   | Language used in the web browser. Example: `LANG=en_GB`.                                                                                 |
-| HEADLESS           | true                   | Only for debugging. To run the web browser in headless mode or visible.                                                                  |
-| DISABLE_MEDIA      | false                  | To disable loading images, CSS, and other media in the web browser to save network bandwidth.                                            |
-| TEST_URL           | https://www.google.com | FlareSolverr makes a request on start to make sure the web browser is working. You can change that URL if it is blocked in your country. |
-| PORT               | 8191                   | Listening port. You don't need to change this if you are running on Docker.                                                              |
-| HOST               | 0.0.0.0                | Listening interface. You don't need to change this if you are running on Docker.                                                         |
-| PROMETHEUS_ENABLED | false                  | Enable Prometheus exporter. See the Prometheus section below.                                                                            |
-| PROMETHEUS_PORT    | 8192                   | Listening port for Prometheus exporter. See the Prometheus section below.                                                                |
+| Name                 | Default                | Notes                                                                                                                                    |
+|----------------------| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| LOG_LEVEL            | info                   | Verbosity of the logging. Use `LOG_LEVEL=debug` for more information.                                                                    |
+| LOG_FILE             | none                   | Path to capture log to file. Example: `/config/flaresolverr.log`.                                                                         |
+| LOG_HTML             | false                  | Only for debugging. If `true` all HTML that passes through the proxy will be logged to the console in `debug` level.                     |
+| PROXY_URL            | none                   | URL for proxy. Will be overwritten by `request` or `sessions` proxy, if used. Example: `http://127.0.0.1:8080`.                          |
+| PROXY_USERNAME       | none                   | Username for proxy. Will be overwritten by `request` or `sessions` proxy, if used. Example: `testuser`.                                  |
+| PROXY_PASSWORD       | none                   | Password for proxy. Will be overwritten by `request` or `sessions` proxy, if used. Example: `testpass`.                                  |
+| CAPTCHA_SOLVER       | none                   | Captcha solving method. It is used when a captcha is encountered. See the Captcha Solvers section.                                       |
+| TZ                   | UTC                    | Timezone used in the logs and the web browser. Example: `TZ=Europe/London`.                                                              |
+| LANG                 | none                   | Language used in the web browser. Example: `LANG=en_GB`.                                                                                 |
+| HEADLESS             | true                   | Only for debugging. To run the web browser in headless mode or visible.                                                                  |
+| DISABLE_MEDIA        | false                  | To disable loading images, CSS, and other media in the web browser to save network bandwidth.                                            |
+| BROWSER_WAIT_TIMEOUT | 1                    | Seconds to wait for the web browser to reach an expected page state on each attempt. Increase it on slow hosts or slow websites.         |
+| TEST_URL             | https://www.google.com | FlareSolverr makes a request on start to make sure the web browser is working. You can change that URL if it is blocked in your country. |
+| PORT                 | 8191                   | Listening port. You don't need to change this if you are running on Docker.                                                              |
+| HOST                 | 0.0.0.0                | Listening interface. You don't need to change this if you are running on Docker.                                                         |
+| PROMETHEUS_ENABLED   | false                  | Enable Prometheus exporter. See the Prometheus section below.                                                                            |
+| PROMETHEUS_PORT      | 8192                   | Listening port for Prometheus exporter. See the Prometheus section below.                                                                |
 
 Environment variables are set differently depending on the operating system. Some examples:
 
